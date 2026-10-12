@@ -1,0 +1,1343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool Auditor</title>
+<meta name="description" content="Manage tool inventory: eliminate strays and foreign objects, and track missing and incorrect tools. Edge AI that runs in your browser; your data never leaves for the cloud.">
+<style>
+  :root {
+    --bg: #f4f2ee; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #dedad2;
+    --accent: #1f5f8b; --ok: #1e7b4a; --bad: #c0392b; --warn: #b26f08; --odd: #7a3fb0;
+    --ok-bg: #e5f3eb; --bad-bg: #fbe8e6; --warn-bg: #fdf1dc; --odd-bg: #f1e8fa;
+    --radius: 10px; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1f1d; --ink: #ecebe7; --muted: #a09e98; --line: #34332f;
+      --accent: #6fb1e0; --ok: #4cc485; --bad: #ef6b5b; --warn: #f0b04a; --odd: #c49af0;
+      --ok-bg: #18301f; --bad-bg: #3a1c18; --warn-bg: #3a2c12; --odd-bg: #2c1f3a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 28px 24px 12px; max-width: 1680px; margin: 0 auto; display: flex; gap: 16px 32px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
+  .brand { max-width: 820px; }
+  h1 { margin: 0; font-size: 30px; letter-spacing: -0.015em; }
+  header p { margin: 6px 0 0; color: var(--muted); }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { font: 12px var(--mono); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); }
+  .pill[data-state="ok"], .pill[data-state="on"] { color: var(--ok); border-color: var(--ok); }
+  .pill[data-state="off"] { color: var(--warn); border-color: var(--warn); }
+  .pill[data-state="busy"] { color: var(--accent); border-color: var(--accent); }
+  .pill[data-state="err"] { color: var(--bad); border-color: var(--bad); }
+  main { max-width: 1680px; margin: 0 auto; padding: 8px 24px 60px; display: grid; gap: 18px; }
+  .split { display: grid; gap: 24px; align-items: start; }
+  .split > div { min-width: 0; }
+  @media (min-width: 1100px) {
+    .split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .split.even > div + div { border-left: 1px solid var(--line); padding-left: 24px; }
+  }
+  .split.even > div > h2:first-child, .split.even > div > h3:first-child { margin-top: 0; }
+  .drop canvas { max-height: 72vh; width: auto !important; max-width: 100%; margin: 0 auto; }
+  .drop.tall canvas { max-height: 86vh; }
+  @media (max-width: 640px) { header, main { padding-left: 16px; padding-right: 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; min-width: 0; }
+  section h2 { margin: 0 0 4px; font-size: 17px; display: flex; gap: 10px; align-items: center; }
+  h3 { font-size: 15px; margin: 16px 0 4px; }
+  .step { font: 12px var(--mono); background: var(--ink); color: var(--panel); border-radius: 6px; padding: 2px 7px; }
+  .hint { color: var(--muted); margin: 0 0 12px; font-size: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button, select, .filebtn { font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 8px;
+         border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .filebtn input { display: none; }
+  label.inline { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; }
+  input[type=text], input[type=number], textarea { font: inherit; font-size: 14px; padding: 6px 10px; border: 1px solid var(--line);
+         border-radius: 6px; background: var(--bg); color: var(--ink); min-width: 0; }
+  textarea { width: 100%; min-height: 110px; font: 13px var(--mono); }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 10px; display: none; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .drop { margin-top: 10px; border: 2px dashed var(--line); border-radius: var(--radius); min-height: 120px;
+          display: grid; place-items: center; color: var(--muted); position: relative; overflow: hidden; text-align: center; padding: 0; }
+  .drop.over { border-color: var(--accent); }
+  .drop canvas { width: 100%; height: auto; display: block; touch-action: none; }
+  .drop.has-img { border-style: solid; }
+  .status { font: 12px var(--mono); margin-top: 6px; color: var(--muted); min-height: 1.4em; }
+  .status.ok { color: var(--ok); } .status.warn { color: var(--warn); }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+  .card { min-width: 0; }
+  .slots { margin-top: 12px; display: grid; gap: 6px; }
+  .slot { display: grid; grid-template-columns: 64px minmax(120px, 2fr) minmax(90px, 1fr) 90px auto; gap: 6px; align-items: center; }
+  .slot.head { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .slot input { width: 100%; }
+  .slot .code { font-family: var(--mono); font-weight: 600; }
+  @media (max-width: 640px) { .slot { grid-template-columns: 56px 1fr 80px; } .slot .opt { display: none; } }
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .tile { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+  .tile .v { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .tile.score .v { font-size: 34px; }
+  .tile.ok .v { color: var(--ok); } .tile.bad .v { color: var(--bad); } .tile.warn .v { color: var(--warn); } .tile.odd .v { color: var(--odd); }
+  .summary { margin-top: 14px; padding: 12px 16px; border-radius: var(--radius); font-weight: 600; display: none; }
+  .summary.ok { display: block; background: var(--ok-bg); color: var(--ok); }
+  .summary.bad { display: block; background: var(--bad-bg); color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  td.num { font-family: var(--mono); }
+  .tag { font: 12px var(--mono); padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+  .tag.present { background: var(--ok-bg); color: var(--ok); }
+  .tag.missing { background: var(--bad-bg); color: var(--bad); }
+  .tag.wrong { background: var(--warn-bg); color: var(--warn); }
+  .tag.unknown, .tag.stray { background: var(--odd-bg); color: var(--odd); }
+  .tablewrap { overflow-x: auto; }
+  ul.actions { margin: 10px 0 0; padding-left: 20px; }
+  ul.actions li { margin: 4px 0; }
+  details { margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+  .guide ol { margin: 8px 0 0; padding-left: 20px; } .guide li { margin: 6px 0; }
+  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink);
+           padding: 16px; max-width: min(94vw, 900px); }
+  dialog video { width: 100%; max-height: 70vh; border-radius: 8px; background: #000; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; padding: 0 16px 30px; }
+  .sr { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Tool Auditor</h1>
+    <p>Manage tool inventory: eliminate strays and foreign objects, and track missing and incorrect tools. Edge AI that works in your browser, so your data never leaves for the cloud.</p>
+  </div>
+  <div class="pills">
+    <span class="pill" id="modelPill" data-state="off">Model: not loaded</span>
+    <span class="pill" id="netPill">Network: …</span>
+    <span class="pill">v2.7</span>
+  </div>
+</header>
+
+<main>
+  <section>
+    <div class="split even">
+      <div>
+        <h2><span class="step">0</span>Load the model</h2>
+        <p class="hint">Downloads once, then the browser caches it. When it says ready, you can turn off Wi-Fi.</p>
+        <div class="row">
+          <label class="inline">Precision
+            <select id="dtype">
+              <option value="q4" selected>q4 (~285 MB, fast)</option>
+              <option value="q8">q8 (~510 MB, more precise)</option>
+            </select>
+          </label>
+          <label class="inline">Image detail
+            <select id="detail">
+              <option value="140">Low (140 tokens)</option>
+              <option value="280" selected>Standard (280)</option>
+              <option value="560">High (560)</option>
+            </select>
+          </label>
+          <button class="primary" id="loadBtn">Load model</button>
+        </div>
+        <div class="bar" id="loadBar"><div></div></div>
+        <p class="hint" id="loadText" style="margin:6px 0 0"></p>
+      </div>
+      <div>
+        <details class="guide">
+      <summary>How to build the board</summary>
+      <ol>
+        <li><b>Base:</b> lay a flat piece of cardboard on the floor. Glue the white chart paper to it with a glue stick or double-sided tape across the whole sheet so it lies flat. Nails tear the cardboard and the paper wrinkles.</li>
+        <li><b>Board edge:</b> keep the whole white sheet in every photo, with the cardboard (or any darker background) showing around it. The app finds the paper's four corners and straightens the photo, so you don't need to stand in the same spot each time. On a light background, draw a solid black square (about 3 cm) at each corner instead, 2–3 cm in from the edges with white paper around it; the app looks for these first.</li>
+        <li><b>Outlines:</b> lay the tools out with a finger's width between them. Trace each one with a thick marker, then fill the shape with a bright color (red or orange). When a tool is gone, its colored shape is easy to see.</li>
+        <li><b>Slot codes:</b> mark the slots in step 2 and press <i>Auto-number</i>. Codes run A1, A2… across the top row, then B1… (or from the bottom row up, if you tick that option). Write each code next to its outline.</li>
+        <li><b>Photos:</b> stand over the board and hold the phone flat, with all four markers in frame. Use even daylight, no flash, and keep your shadow off the board.</li>
+      </ol>
+    </details>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="step">1</span>Reference photos</h2>
+    <p class="hint">Photos, iPhone HEIC, screenshots or a video clip (you pick the frame). Choose a file, drop it, paste it, or use the camera. The app finds the board (corner markers if you drew them, otherwise the paper edge) and straightens it. If it can't, drag the corners yourself.</p>
+    <div class="thumbs">
+      <div class="card" data-card="empty">
+        <strong>Empty board (outlines only)</strong> <span class="hint">· needed to tell missing from unknown</span>
+        <div class="row" style="margin-top:6px">
+          <label class="filebtn">Choose file<input type="file" accept="image/*,video/*,.heic,.heif" data-target="empty"></label>
+          <button data-cam="empty">Camera</button>
+          <button data-adjust="empty">Adjust corners</button>
+          <button data-rotate="empty" title="Turn the board a quarter turn">↻</button>
+        </div>
+        <div class="drop" data-drop="empty"><span>Drop or paste a photo</span></div>
+        <div class="status" data-status="empty"></div>
+      </div>
+      <div class="card" data-card="ref">
+        <strong>All tools in place</strong> <span class="hint">· sets which way is up</span>
+        <div class="row" style="margin-top:6px">
+          <label class="filebtn">Choose file<input type="file" accept="image/*,video/*,.heic,.heif" data-target="ref"></label>
+          <button data-cam="ref">Camera</button>
+          <button data-adjust="ref">Adjust corners</button>
+          <button data-rotate="ref" title="Turn the board a quarter turn">↻</button>
+        </div>
+        <div class="drop" data-drop="ref"><span>Drop or paste a photo</span></div>
+        <div class="status" data-status="ref"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="step">2</span>Planogram: mark the slots</h2>
+    <p class="hint">Drag a box around each tool on the straightened photo and give it a name. Part number and unit cost are optional; they appear on restock lines. The planogram saves in this browser, and you can export it to share or back it up.</p>
+    <div class="split">
+      <div class="pane-img">
+        <div class="drop tall" data-drop="mark"><span>Add the "all tools in place" photo first</span></div>
+      </div>
+      <div>
+        <div class="row">
+          <label class="inline">Board name <input type="text" id="boardName" value="Garage shadow board" style="width:220px"></label>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label class="inline"><input type="checkbox" id="autoNum" checked> Auto-number slots by position</label>
+          <label class="inline"><input type="checkbox" id="fromBottom"> Letter rows from the bottom (A = bottom row)</label>
+        </div>
+        <div class="slots" id="slots"></div>
+        <div class="row" style="margin-top:12px">
+          <button id="renumBtn">Auto-number now</button>
+          <button id="undoBtn">Undo last box</button>
+          <button id="clearBtn">Clear boxes</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="exportJsonBtn">Export planogram (.json)</button>
+          <button id="exportCsvBtn">Export spec (.csv)</button>
+          <label class="filebtn">Import planogram<input type="file" accept="application/json,.json" id="layoutFile"></label>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label class="inline"><input type="checkbox" id="withPhotos" checked> include reference photos in export</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="step">3</span>Check the board</h2>
+    <p class="hint">Take a new photo from anywhere above the board, with the whole sheet in frame, then run the check.</p>
+    <div class="split">
+      <div class="pane-img">
+        <div class="card" data-card="check">
+      <div class="row">
+        <label class="filebtn">Choose file<input type="file" accept="image/*,video/*,.heic,.heif" data-target="check"></label>
+        <button data-cam="check">Camera</button>
+        <button data-adjust="check">Adjust corners</button>
+        <button data-rotate="check" title="Turn the board a quarter turn">↻</button>
+        <button class="primary" id="runBtn">Run check</button>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="inline">Match threshold
+          <input type="range" id="thr" min="0.5" max="0.98" step="0.01" value="0.80" style="width:120px">
+          <span id="thrVal" style="font-family:var(--mono)">0.80</span>
+        </label>
+        <label class="inline"><input type="checkbox" id="strayOn" checked> Scan for stray objects outside slots</label>
+      </div>
+      <details>
+        <summary>Item names for identifying unknown and stray objects</summary>
+        <p class="hint" style="margin-top:8px">One per line. Slot names are added automatically. The model matches the photo crop to the closest name; the result is a best guess.</p>
+        <textarea id="catalog"></textarea>
+      </details>
+      <div class="drop tall" data-drop="check"><span>Drop or paste a photo</span></div>
+      <div class="status" data-status="check"></div>
+    </div>
+      </div>
+      <div>
+        <div class="tiles" id="tiles" style="display:none"></div>
+        <p class="hint" id="resultsEmpty" style="margin-top:4px">Results appear here after you run a check.</p>
+        <div class="summary" id="summary"></div>
+        <ul class="actions" id="actions"></ul>
+        <div class="tablewrap"><table id="resultTable" style="display:none">
+          <thead><tr>
+            <th>Slot</th><th>Item</th><th>Verdict</th><th>Same tool</th><th>Best other slot</th><th>Empty slot</th><th>Outline showing</th><th>Changed</th><th>Looks like</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <div class="row" style="margin-top:12px">
+          <button id="dlImgBtn" disabled>Download annotated photo</button>
+        </div>
+        <p class="hint" id="runInfo" style="margin-top:10px"></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="step">4</span>Restock request and audit log</h2>
+    <p class="hint">Each missing tool becomes a restock line: find it or reorder it. Every check is logged in this browser for an audit trail; download it as CSV.</p>
+    <div class="split even">
+      <div>
+        <h3>Restock request (latest check)</h3>
+        <div class="tablewrap"><table id="restockTable" style="display:none">
+          <thead><tr><th>Slot</th><th>Item</th><th>Part no.</th><th>Qty</th><th>Unit cost</th><th>Line value</th><th>Reason</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <p class="hint" id="restockEmpty">No restock lines yet.</p>
+        <div class="row"><button id="restockCsvBtn" disabled>Download restock (.csv)</button><button id="restockCopyBtn" disabled>Copy as text</button></div>
+      </div>
+      <div>
+        <h3>Audit log</h3>
+        <div class="tablewrap"><table id="logTable" style="display:none">
+          <thead><tr><th>When</th><th>Board</th><th>Compliance</th><th>Present</th><th>Issues</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <p class="hint" id="logEmpty">No checks logged yet.</p>
+        <div class="row"><button id="logCsvBtn">Download audit log (.csv)</button><button id="logClearBtn">Clear log</button></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>Tool Auditor v2.7 · built with EmbeddingGemma 2 (Apache 2.0) and Transformers.js · runs on-device · MIT</footer>
+
+<dialog id="camDialog">
+  <p class="hint" id="camHint" style="margin-top:0"></p>
+  <video id="camVideo" autoplay playsinline muted></video>
+  <div class="row" style="margin-top:10px; justify-content:flex-end">
+    <button id="camCancel">Cancel</button>
+    <button class="primary" id="camShoot">Use this frame</button>
+  </div>
+</dialog>
+
+<script type="module">
+import { AutoModel, AutoProcessor, AutoConfig, RawImage, env }
+  from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1";
+
+env.allowLocalModels = false;
+
+const MODEL_ID = "onnx-community/embeddinggemma-2-ONNX";
+const HEIC_LIB = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
+const WEBGPU_TOKEN_CAP = 2400;   // model card: keep WebGPU batches under ~2,700 tokens
+const WRONG_MARGIN = 0.02;       // another slot's tool must beat the expected one by this much
+const MAX_SRC = 2400;            // downscale big phone photos (48 MP) before anything else
+const CANON = 1400;              // long side of the straightened board
+const CROP_SIDE = 768;
+const CROP_PAD = 0.04;           // extra margin around each slot box, as a fraction of the box
+const EMPTY_SHOWING = 0.7;        // an outline must be at least this uncovered before a slot can be called empty
+const SWAP_GAP = 0.08;           // in a swap, the tool's match to its own slot may beat the swapped slot by at most this
+const FIT_LIMIT = 0.25;           // share of a slot's coloured outline showing that means "this tool doesn't fill its outline"
+const STRAY_DIFF = 45;           // colour change (0–255, largest channel) that counts as "something is here now"
+const STRAY_NEAR = 7;            // cells: changes mostly within this band of an outline are a shifted tool
+const STRAY_MARGIN = 3;          // cells (of 160 across) around each outline that the stray scan ignores
+const CHANGE_MIN = 0.05;         // a slot whose picture changed less than this since the reference is untouched
+const MAX_STRAYS = 6;
+const KEYS = { layout: "sbc2-layout", ref: "sbc2-ref", empty: "sbc2-empty", log: "sbc2-log" };
+const OLD_DEFAULT_CATALOG = [
+  "claw hammer", "flathead screwdriver", "Phillips screwdriver", "adjustable wrench", "combination wrench",
+  "needle-nose pliers", "slip-joint pliers", "wire cutters", "tape measure", "utility knife", "hex key set",
+  "socket wrench", "spirit level", "chisel", "hand saw", "metal file", "scissors", "flashlight", "zip ties",
+  "smartphone", "coffee mug", "water bottle", "car keys", "work glove", "shop rag", "pen", "toy",
+].join("\n");
+const DEFAULT_CATALOG = [
+  "claw hammer", "flathead screwdriver", "Phillips screwdriver", "adjustable wrench", "combination wrench",
+  "open-end spanner", "needle-nose pliers", "slip-joint pliers", "wire cutters", "tape measure", "utility knife",
+  "hex key set", "socket wrench", "spirit level", "chisel", "hand saw", "metal file", "scissors", "flashlight",
+  "zip ties", "smartphone", "coffee mug", "water bottle", "car keys", "work glove", "shop rag", "pen", "pencil",
+  "marker pen", "screw", "bolt", "nut", "washer", "drill bit", "roll of tape", "battery", "toy",
+].join("\n");
+
+const $ = (id) => document.getElementById(id);
+const state = {
+  model: null, processor: null, device: null,
+  src: {}, srcData: {}, small: {}, quad: {}, found: {}, img: {}, view: {},
+  slots: [], aspect: null, results: null, strays: [], textCache: null, active: "check",
+};
+
+/* ---------- small helpers ---------- */
+const l2 = (v) => { let s = 0; for (const x of v) s += x * x; s = Math.sqrt(s) || 1; return v.map((x) => x / s); };
+const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+const f3 = (x) => (x == null ? "—" : x.toFixed(3));
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const csvCell = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const toCsv = (rows) => rows.map((r) => r.map(csvCell).join(",")).join("\n");
+function download(name, data, type) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+const slug = (s) => (s || "board").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "board";
+function store(k, v) { try { localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v)); return true; } catch { return false; } }
+function fetchStore(k, json = true) { try { const v = localStorage.getItem(k); return v == null ? null : json ? JSON.parse(v) : v; } catch { return null; } }
+function newCanvas(w, h) { const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; }
+
+/* ---------- status pills ---------- */
+function setModelStatus(text, s) { const p = $("modelPill"); p.textContent = "Model: " + text; p.dataset.state = s; }
+function updateNet() {
+  const p = $("netPill"); p.textContent = navigator.onLine ? "Network: online" : "Network: offline";
+  p.dataset.state = navigator.onLine ? "on" : "off";
+}
+addEventListener("online", updateNet); addEventListener("offline", updateNet); updateNet();
+
+/* ---------- model ---------- */
+function makeProgress() {
+  const files = {}; const bar = $("loadBar"); bar.style.display = "block";
+  return (p) => {
+    if (p.status !== "progress" || !p.total) return;
+    files[p.file] = { loaded: p.loaded, total: p.total };
+    const v = Object.values(files), a = v.reduce((s, f) => s + f.loaded, 0), b = v.reduce((s, f) => s + f.total, 0);
+    bar.firstElementChild.style.width = (100 * a / b).toFixed(1) + "%";
+    $("loadText").textContent = `Downloading ${(a / 1e6).toFixed(0)} / ${(b / 1e6).toFixed(0)} MB`;
+  };
+}
+async function hasWebGPU() { try { return !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch { return false; } }
+
+async function loadModel() {
+  const btn = $("loadBtn"); btn.disabled = true;
+  const dtype = $("dtype").value;
+  const devices = (await hasWebGPU()) ? ["webgpu", "wasm"] : ["wasm"];
+  for (const device of devices) {
+    try {
+      setModelStatus(`loading on ${device}…`, "busy");
+      const config = await AutoConfig.from_pretrained(MODEL_ID);
+      config.audio_config = null;                       // vision + text only: smaller download
+      state.processor = await AutoProcessor.from_pretrained(MODEL_ID);
+      state.model = await AutoModel.from_pretrained(MODEL_ID, { config, device, dtype, progress_callback: makeProgress() });
+      state.device = device;
+      $("loadText").textContent = "Warming up…";
+      const blank = newCanvas(64, 64); const g = blank.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, 64, 64);
+      await embedImages([blank]);
+      setModelStatus(`ready · ${device} · ${dtype}`, "ok");
+      $("loadText").textContent = device === "webgpu" ? "Ready on your GPU. You can go offline now."
+        : "Ready on CPU (WebGPU unavailable). It works, just slower.";
+      $("loadBar").style.display = "none";
+      return;
+    } catch (err) {
+      console.error(err);
+      if (device === "webgpu" && devices.includes("wasm")) $("loadText").textContent = "WebGPU failed, retrying on CPU… (" + err.message + ")";
+      else { setModelStatus("failed", "err"); $("loadText").textContent = "Could not load the model: " + err.message; btn.disabled = false; }
+    }
+  }
+}
+$("loadBtn").addEventListener("click", loadModel);
+
+async function embedImages(canvases) {
+  const budget = Number($("detail").value);
+  state.processor.image_processor.max_soft_tokens = budget;
+  const perBatch = state.device === "webgpu" ? Math.max(1, Math.floor(WEBGPU_TOKEN_CAP / budget)) : 8;
+  const out = [];
+  for (let i = 0; i < canvases.length; i += perBatch) {
+    const chunk = canvases.slice(i, i + perBatch).map((c) => [RawImage.fromCanvas(c)]);
+    const { sentence_embedding } = await state.model(await state.processor(null, chunk));
+    for (const v of sentence_embedding.tolist()) out.push(l2(v));
+  }
+  return out;
+}
+async function embedTexts(texts) {
+  const out = [];
+  for (let i = 0; i < texts.length; i += 16) {
+    const { sentence_embedding } = await state.model(await state.processor(texts.slice(i, i + 16)));
+    for (const v of sentence_embedding.tolist()) out.push(l2(v));
+  }
+  return out;
+}
+const asQuery = (q) => `task: search result | query: ${q}`;
+
+/* ---------- decoding any input: photos, HEIC, video frames ---------- */
+function fitCanvas(src, w0, h0) {
+  const k = Math.min(1, MAX_SRC / Math.max(w0, h0));
+  const c = newCanvas(w0 * k, h0 * k); const g = c.getContext("2d");
+  g.imageSmoothingQuality = "high"; g.drawImage(src, 0, 0, c.width, c.height); return c;
+}
+const isVideo = (f) => /^video\//.test(f.type) || /\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name || "");
+async function isHeic(f) {
+  if (/heic|heif/i.test(f.type) || /\.(heic|heif)$/i.test(f.name || "")) return true;
+  try { const b = new Uint8Array(await f.slice(4, 12).arrayBuffer()); const s = String.fromCharCode(...b);
+        return /^ftyp(heic|heix|hevc|hevx|mif1|msf1)/.test(s); } catch { return false; }
+}
+function loadScript(src) {
+  return new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.onload = ok;
+    s.onerror = () => bad(new Error("could not download the HEIC converter (are you offline?)")); document.head.appendChild(s); });
+}
+async function viaImgTag(blob) {
+  const url = URL.createObjectURL(blob);
+  try {
+    const im = new Image(); im.decoding = "async"; im.src = url; await im.decode();
+    return fitCanvas(im, im.naturalWidth, im.naturalHeight);
+  } finally { URL.revokeObjectURL(url); }
+}
+async function decodeImage(blob, allowHeic = true) {
+  try { const b = await createImageBitmap(blob, { imageOrientation: "from-image" }); return fitCanvas(b, b.width, b.height); } catch {}
+  try { return await viaImgTag(blob); } catch {}
+  if (allowHeic && await isHeic(blob)) {
+    if (!window.heic2any) await loadScript(HEIC_LIB);
+    let out = await window.heic2any({ blob, toType: "image/jpeg", quality: 0.92 });
+    if (Array.isArray(out)) out = out[0];
+    return decodeImage(out, false);
+  }
+  throw new Error("This file type can't be read here. Try JPEG, PNG, WebP, HEIC or a short video.");
+}
+async function decodeAny(file, key) {
+  if (isVideo(file)) return openVideo(file, key);
+  setStatus(key, "Reading photo…");
+  return setSource(key, await decodeImage(file));
+}
+
+/* ---------- geometry: marker detection, homography, warp ---------- */
+function greyOf(canvas) {
+  const d = canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data;
+  const g = new Uint8ClampedArray(canvas.width * canvas.height);
+  for (let i = 0; i < g.length; i++) g[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2];
+  return g;
+}
+function otsu(g) {
+  const h = new Float64Array(256); for (const v of g) h[v]++;
+  let sum = 0; for (let i = 0; i < 256; i++) sum += i * h[i];
+  let sB = 0, wB = 0, best = 0, t = 128;
+  for (let i = 0; i < 256; i++) {
+    wB += h[i]; if (!wB) continue; const wF = g.length - wB; if (!wF) break;
+    sB += i * h[i]; const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) ** 2;
+    if (v > best) { best = v; t = i; }
+  }
+  return t;
+}
+
+// Finds four solid dark squares surrounded by white paper; returns centres ordered TL, TR, BR, BL.
+function findMarkers(src) {
+  const D = 900, k = Math.min(1, D / Math.max(src.width, src.height));
+  const c = newCanvas(src.width * k, src.height * k); c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  const W = c.width, H = c.height, N = W * H, g = greyOf(c);
+  const T = Math.min(otsu(g), 110);
+  const lab = new Int32Array(N); const stack = new Int32Array(N); let next = 0; const cands = [];
+  for (let p = 0; p < N; p++) {
+    if (lab[p] || g[p] > T) continue;
+    next++; let sp = 0, area = 0, sx = 0, sy = 0, x0 = W, x1 = 0, y0 = H, y1 = 0;
+    stack[sp++] = p; lab[p] = next;
+    while (sp) {
+      const q = stack[--sp], x = q % W, y = (q / W) | 0;
+      area++; sx += x; sy += y; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      for (const n of [q - 1, q + 1, q - W, q + W]) {
+        if (n < 0 || n >= N || lab[n] || g[n] > T) continue;
+        if ((n === q - 1 && x === 0) || (n === q + 1 && x === W - 1)) continue;
+        lab[n] = next; stack[sp++] = n;
+      }
+    }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    if (area < N * 0.00012 || area > N * 0.02 || bw < 6 || bh < 6) continue;
+    if (Math.max(bw, bh) / Math.min(bw, bh) > 2.2 || area / (bw * bh) < 0.55) continue;
+    // ring of paper around it must be bright
+    const m = Math.max(3, Math.round(0.45 * Math.max(bw, bh)));
+    let ring = 0, bright = 0;
+    for (let y = y0 - m; y <= y1 + m; y += 1) for (let x = x0 - m; x <= x1 + m; x += 1) {
+      if (x >= x0 - 2 && x <= x1 + 2 && y >= y0 - 2 && y <= y1 + 2) continue;
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      ring++; if (g[y * W + x] > T + 25) bright++;
+    }
+    if (!ring || bright / ring < 0.72) continue;
+    cands.push({ x: sx / area / k, y: sy / area / k, size: Math.sqrt(area) / k });
+  }
+  if (cands.length < 4) return null;
+  const pick = (f) => cands.reduce((a, b) => (f(b) > f(a) ? b : a));
+  const q = [pick((p) => -(p.x + p.y)), pick((p) => p.x - p.y), pick((p) => p.x + p.y), pick((p) => p.y - p.x)];
+  if (new Set(q).size < 4) return null;
+  if (polyArea(q) < 0.08 * src.width * src.height) return null;
+  return q.map(({ x, y }) => ({ x, y }));
+}
+// Finds the white sheet itself (bright, low-colour pixels) and returns its corners ordered TL, TR, BR, BL.
+function findPaper(src) {
+  const D = 700, k = Math.min(1, D / Math.max(src.width, src.height));
+  const c = newCanvas(src.width * k, src.height * k); const g = c.getContext("2d", { willReadFrequently: true });
+  g.drawImage(src, 0, 0, c.width, c.height);
+  const W = c.width, H = c.height, N = W * H, d = g.getImageData(0, 0, W, H).data;
+  const mn = new Uint8ClampedArray(N), ok = new Uint8Array(N);   // darkest channel: white paper stays high, brown cardboard drops
+  for (let i = 0; i < N; i++) {
+    const r = d[4 * i], gg = d[4 * i + 1], bb = d[4 * i + 2], lo = Math.min(r, gg, bb), hi = Math.max(r, gg, bb);
+    mn[i] = lo; ok[i] = lo > 90 && lo - (hi - lo) > 50 ? 1 : 0;      // paper in shadow: darker, but still grey rather than brown
+  }
+  const T = Math.max(otsu(mn), 120);
+  for (let i = 0; i < N; i++) if (mn[i] > T) ok[i] = 2;              // clearly white paper
+  const lab = new Uint8Array(N), stack = new Int32Array(N); const comps = [];
+  for (let p = 0; p < N; p++) {
+    if (lab[p] || ok[p] !== 2) continue;
+    let sp = 0, area = 0, x0 = W, x1 = 0, y0 = H, y1 = 0; const ext = { tl: [p, Infinity], tr: [p, -Infinity], br: [p, -Infinity], bl: [p, -Infinity] };
+    stack[sp++] = p; lab[p] = 1;
+    while (sp) {
+      const q = stack[--sp], x = q % W, y = (q / W) | 0; area++;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      if (x + y < ext.tl[1]) ext.tl = [q, x + y]; if (x - y > ext.tr[1]) ext.tr = [q, x - y];
+      if (x + y > ext.br[1]) ext.br = [q, x + y]; if (y - x > ext.bl[1]) ext.bl = [q, y - x];
+      if (x > 0 && !lab[q - 1] && ok[q - 1]) { lab[q - 1] = 1; stack[sp++] = q - 1; }
+      if (x < W - 1 && !lab[q + 1] && ok[q + 1]) { lab[q + 1] = 1; stack[sp++] = q + 1; }
+      if (y > 0 && !lab[q - W] && ok[q - W]) { lab[q - W] = 1; stack[sp++] = q - W; }
+      if (y < H - 1 && !lab[q + W] && ok[q + W]) { lab[q + W] = 1; stack[sp++] = q + W; }
+    }
+    if (area >= N * 0.005) comps.push({ area, ext, x0, x1, y0, y1 });
+  }
+  if (!comps.length) return null;
+  // Lines drawn across the sheet split it into white strips: join every big strip that sits over the largest one.
+  const big = comps.reduce((a, b) => (b.area > a.area ? b : a));
+  const parts = comps.filter((c) => c === big || (Math.min(c.x1, big.x1) - Math.max(c.x0, big.x0)) > 0.6 * (c.x1 - c.x0)
+                                        || (Math.min(c.y1, big.y1) - Math.max(c.y0, big.y0)) > 0.6 * (c.y1 - c.y0));
+  if (parts.reduce((s, c) => s + c.area, 0) < N * 0.15) return null;
+  const score = { tl: (x, y) => -(x + y), tr: (x, y) => x - y, br: (x, y) => x + y, bl: (x, y) => y - x };
+  const q = ["tl", "tr", "br", "bl"].map((key) => {
+    let bp = null, bs = -Infinity;
+    for (const c of parts) { const p = c.ext[key][0], v = score[key](p % W, (p / W) | 0); if (v > bs) { bs = v; bp = p; } }
+    return { x: (bp % W + 0.5) / k, y: (((bp / W) | 0) + 0.5) / k };
+  });
+  if (polyArea(q) < 0.15 * src.width * src.height) return null;
+  // A sheet that fills the whole photo edge to edge has no visible border to trust.
+  const touches = q.filter((p) => p.x < 2 / k || p.y < 2 / k || p.x > src.width - 2 / k || p.y > src.height - 2 / k).length;
+  return touches >= 3 ? null : q;
+}
+// The reference photo decides the method (markers or paper edge); the other photos must use the same one so slots line up.
+function detectBoard(key, canvas) {
+  if (key === "ref") {
+    const m = findMarkers(canvas); if (m) return { quad: m, method: "markers" };
+    const p = findPaper(canvas); if (p) return { quad: p, method: "paper" };
+    return { quad: null, method: "manual" };
+  }
+  const want = state.method || "markers";
+  const q = want === "paper" ? findPaper(canvas) : want === "markers" ? findMarkers(canvas) : null;
+  return { quad: q, method: want };
+}
+function polyArea(q) { let s = 0; for (let i = 0; i < q.length; i++) { const a = q[i], b = q[(i + 1) % q.length]; s += a.x * b.y - b.x * a.y; } return Math.abs(s) / 2; }
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const quadAspect = (q) => (dist(q[0], q[1]) + dist(q[3], q[2])) / (dist(q[0], q[3]) + dist(q[1], q[2]));
+const rotQuad = (q, s) => q.map((_, i) => q[(i + s) % 4]);
+const fullQuad = (c) => [{ x: 0, y: 0 }, { x: c.width, y: 0 }, { x: c.width, y: c.height }, { x: 0, y: c.height }];
+
+// Homography mapping 4 points `from` → `to`
+function homography(from, to) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const { x, y } = from[i], { x: u, y: v } = to[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  for (let c = 0; c < 8; c++) {
+    let p = c; for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]]; [b[c], b[p]] = [b[p], b[c]];
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue; const f = A[r][c] / A[c][c];
+      for (let k = c; k < 8; k++) A[r][k] -= f * A[c][k]; b[r] -= f * b[c];
+    }
+  }
+  return [...b.map((v, i) => v / A[i][i]), 1];
+}
+function canonSize(aspect = state.aspect || 1) {
+  return aspect >= 1 ? [CANON, Math.round(CANON / aspect)] : [Math.round(CANON * aspect), CANON];
+}
+function warpFrom(data, sw, sh, quad, W, H) {
+  const h = homography([{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }], quad);
+  const out = new ImageData(W, H), o = out.data, s = data;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const X = x + 0.5, Y = y + 0.5, z = h[6] * X + h[7] * Y + h[8];
+    let u = (h[0] * X + h[1] * Y + h[2]) / z - 0.5, v = (h[3] * X + h[4] * Y + h[5]) / z - 0.5;
+    const i = 4 * (y * W + x);
+    if (u < 0) u = 0; if (v < 0) v = 0; if (u > sw - 1) u = sw - 1; if (v > sh - 1) v = sh - 1;
+    const x0 = u | 0, y0 = v | 0, x1 = Math.min(x0 + 1, sw - 1), y1 = Math.min(y0 + 1, sh - 1), fx = u - x0, fy = v - y0;
+    const a = 4 * (y0 * sw + x0), bq = 4 * (y0 * sw + x1), cq = 4 * (y1 * sw + x0), dq = 4 * (y1 * sw + x1);
+    for (let ch = 0; ch < 3; ch++) {
+      o[i + ch] = (s[a + ch] * (1 - fx) + s[bq + ch] * fx) * (1 - fy) + (s[cq + ch] * (1 - fx) + s[dq + ch] * fx) * fy;
+    }
+    o[i + 3] = 255;
+  }
+  return out;
+}
+function warpKey(key) {
+  const src = state.src[key]; if (!src) return;
+  if (!state.srcData[key]) state.srcData[key] = src.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, src.width, src.height).data;
+  const [W, H] = canonSize();
+  const c = newCanvas(W, H);
+  c.getContext("2d").putImageData(warpFrom(state.srcData[key], src.width, src.height, state.quad[key], W, H), 0, 0);
+  state.img[key] = c;
+}
+// Tiny 40×40 straightened grey version, used to work out which way is up.
+function smallWarp(key, quad) {
+  if (!state.small[key]) {
+    const src = state.src[key], k = Math.min(1, 320 / Math.max(src.width, src.height));
+    const c = newCanvas(src.width * k, src.height * k); c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+    state.small[key] = { k, w: c.width, h: c.height, data: c.getContext("2d").getImageData(0, 0, c.width, c.height).data };
+  }
+  const s = state.small[key];
+  const im = warpFrom(s.data, s.w, s.h, quad.map((p) => ({ x: p.x * s.k, y: p.y * s.k })), 40, 40).data;
+  const g = new Float32Array(1600); let m = 0;
+  for (let i = 0; i < 1600; i++) { g[i] = 0.299 * im[4 * i] + 0.587 * im[4 * i + 1] + 0.114 * im[4 * i + 2]; m += g[i]; }
+  m /= 1600; let n = 0; for (let i = 0; i < 1600; i++) { g[i] -= m; n += g[i] * g[i]; }
+  n = Math.sqrt(n) || 1; for (let i = 0; i < 1600; i++) g[i] /= n; return g;
+}
+// Rotate this photo's corner order so it lines up with the reference photo.
+function orient(key) {
+  if (key === "ref" || !state.src.ref || !state.src[key]) return;
+  const r = smallWarp("ref", state.quad.ref);
+  let best = 0, bestS = -2;
+  for (let s = 0; s < 4; s++) { const v = dot(r, smallWarp(key, rotQuad(state.quad[key], s))); if (v > bestS) { bestS = v; best = s; } }
+  state.quad[key] = rotQuad(state.quad[key], best);
+}
+
+/* ---------- sources: set, re-warp, adjust ---------- */
+function setStatus(key, text, cls = "") { const el = document.querySelector(`[data-status="${key}"]`); if (el) { el.textContent = text; el.className = "status " + cls; } }
+
+function setSource(key, canvas, opts = {}) {
+  state.src[key] = canvas; state.srcData[key] = null; state.small[key] = null;
+  let q = opts.quad;
+  if (!q) { const det = detectBoard(key, canvas); q = det.quad; if (key === "ref") { state.method = det.method; saveLayout(); } }
+  state.found[key] = !!q || !!opts.restored;
+  state.quad[key] = q || fullQuad(canvas);
+  state.view[key] = "warped";
+  if (key === "check") clearResults();
+  if (key === "ref") { state.aspect = quadAspect(state.quad.ref); refreshAll(); }
+  else { orient(key); warpKey(key); renderCard(key); }
+  if (key !== "check") persistRef(key);
+  state.active = key;
+}
+function refreshAll() {
+  if (state.src.ref) { state.aspect = quadAspect(state.quad.ref); warpKey("ref"); }
+  for (const k of ["empty", "check"]) if (state.src[k]) { orient(k); warpKey(k); }
+  for (const k of ["empty", "ref", "check"]) renderCard(k);
+  renderMark();
+}
+function statusFor(key) {
+  if (!state.src[key]) return setStatus(key, "");
+  if (state.view[key] === "adjust") return setStatus(key, "Drag the four dots onto the corner markers, then press Done.", "warn");
+  const how = { markers: "corner markers", paper: "paper edge", manual: "your corners" }[state.method] || "corners";
+  if (state.found[key]) setStatus(key, `✓ Board found (${how}) and straightened`, "ok");
+  else setStatus(key, state.method === "paper" ? "Paper edge not found. Using the whole photo; press Adjust corners to fix."
+    : "Corner markers not found. Using the whole photo; press Adjust corners to fix.", "warn");
+}
+
+/* ---------- drawing ---------- */
+const COLORS = { present: "#1e9e5a", missing: "#d0392b", wrong: "#d98a0b", unknown: "#8e44c9", stray: "#8e44c9", plain: "#1f6fb2" };
+
+function hostCanvas(dropKey) {
+  const drop = document.querySelector(`[data-drop="${dropKey}"]`);
+  let cv = drop.querySelector("canvas");
+  if (!cv) { drop.innerHTML = ""; cv = document.createElement("canvas"); drop.appendChild(cv); drop.classList.add("has-img"); }
+  return cv;
+}
+function drawBoxes(g, W, H, boxes, styleFor) {
+  const lw = Math.max(3, W / 300), fs = Math.max(16, W / 48);
+  boxes.forEach((b, i) => {
+    const st = styleFor(b, i); if (!st) return;
+    const x = b.x * W, y = b.y * H, w = b.w * W, h = b.h * H;
+    g.lineWidth = lw; g.strokeStyle = st.color; g.setLineDash(st.dash ? [lw * 3, lw * 2] : []); g.strokeRect(x, y, w, h); g.setLineDash([]);
+    g.font = `600 ${fs}px -apple-system, sans-serif`;
+    const tw = g.measureText(st.label).width + fs * 0.6, ty = y - fs * 1.4 < 0 ? y : y - fs * 1.4;
+    g.fillStyle = st.color; g.fillRect(x, ty, tw, fs * 1.4);
+    g.fillStyle = "#fff"; g.fillText(st.label, x + fs * 0.3, ty + fs * 1.05);
+  });
+}
+function drawOnto(dropKey, base, boxes = [], styleFor = () => null) {
+  const cv = hostCanvas(dropKey); cv.width = base.width; cv.height = base.height;
+  const g = cv.getContext("2d"); g.drawImage(base, 0, 0); drawBoxes(g, base.width, base.height, boxes, styleFor);
+  return cv;
+}
+function renderCard(key) {
+  if (!state.src[key]) return;
+  if (state.view[key] === "adjust") drawAdjust(key);
+  else if (key === "check" && state.results) renderCheckImage();
+  else drawOnto(key, state.img[key]);
+  const btn = document.querySelector(`[data-adjust="${key}"]`); if (btn) btn.textContent = state.view[key] === "adjust" ? "Done" : "Adjust corners";
+  statusFor(key);
+}
+function drawAdjust(key) {
+  const src = state.src[key], cv = hostCanvas(key); cv.width = src.width; cv.height = src.height;
+  const g = cv.getContext("2d"); g.drawImage(src, 0, 0);
+  const q = state.quad[key], r = Math.max(10, src.width / 70);
+  g.lineWidth = Math.max(3, src.width / 350); g.strokeStyle = "#1f6fb2"; g.fillStyle = "rgba(31,111,178,.12)";
+  g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath(); g.fill(); g.stroke();
+  q.forEach((p, i) => {
+    g.beginPath(); g.arc(p.x, p.y, r, 0, Math.PI * 2); g.fillStyle = i === 0 ? "#d98a0b" : "#1f6fb2"; g.fill();
+    g.lineWidth = 3; g.strokeStyle = "#fff"; g.stroke();
+  });
+  g.font = `600 ${r * 1.4}px -apple-system, sans-serif`; g.fillStyle = "#d98a0b";
+  if (key === "ref") g.fillText("top-left", q[0].x + r * 1.3, q[0].y - r * 0.4);
+  wireAdjust(cv, key);
+}
+function wireAdjust(cv, key) {
+  if (cv.dataset.adjustWired) return; cv.dataset.adjustWired = "1";
+  let grab = -1;
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * cv.width, y: (e.clientY - r.top) / r.height * cv.height }; };
+  cv.addEventListener("pointerdown", (e) => {
+    const k = cv.dataset.key; if (state.view[k] !== "adjust") return;
+    const p = pos(e), q = state.quad[k]; let bi = -1, bd = Infinity;
+    q.forEach((c, i) => { const d = dist(c, p); if (d < bd) { bd = d; bi = i; } });
+    if (bd < cv.width * 0.12) { grab = bi; cv.setPointerCapture(e.pointerId); e.preventDefault(); }
+  });
+  cv.addEventListener("pointermove", (e) => {
+    const k = cv.dataset.key; if (grab < 0 || state.view[k] !== "adjust") return;
+    const p = pos(e); state.quad[k][grab] = { x: Math.min(cv.width, Math.max(0, p.x)), y: Math.min(cv.height, Math.max(0, p.y)) };
+    drawAdjust(k);
+  });
+  cv.addEventListener("pointerup", () => { grab = -1; });
+  cv.dataset.key = key;
+}
+document.querySelectorAll("[data-adjust]").forEach((b) => b.addEventListener("click", () => {
+  const key = b.dataset.adjust; if (!state.src[key]) return alert("Add a photo first.");
+  if (state.view[key] === "adjust") {
+    state.view[key] = "warped"; state.found[key] = true;
+    if (key === "ref") { state.small.ref = null; refreshAll(); } else { warpKey(key); if (key === "check") clearResults(); renderCard(key); }
+    if (key !== "check") persistRef(key);
+  } else { state.view[key] = "adjust"; renderCard(key); }
+}));
+document.querySelectorAll("[data-rotate]").forEach((b) => b.addEventListener("click", () => {
+  const key = b.dataset.rotate; if (!state.src[key]) return;
+  state.quad[key] = rotQuad(state.quad[key], 1); state.view[key] = "warped";
+  if (key === "ref") refreshAll(); else { warpKey(key); if (key === "check") clearResults(); renderCard(key); }
+  if (key !== "check") persistRef(key);
+}));
+
+/* ---------- planogram (slot marking) ---------- */
+let dragStart = null, dragBox = null;
+function renderMark() {
+  if (!state.img.ref) { renderSlotList(); return; }
+  const all = dragBox ? [...state.slots, dragBox] : state.slots;
+  const cv = drawOnto("mark", state.img.ref, all, (b) => ({ color: COLORS.plain, label: `${b.code || ""} ${b.name || ""}`.trim() || "…" }));
+  if (!cv.dataset.wired) { wireMarking(cv); cv.dataset.wired = "1"; }
+  renderSlotList();
+}
+function wireMarking(cv) {
+  const pos = (e) => { const r = cv.getBoundingClientRect();
+    return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
+  cv.style.cursor = "crosshair";
+  cv.addEventListener("pointerdown", (e) => { cv.setPointerCapture(e.pointerId); dragStart = pos(e); e.preventDefault(); });
+  cv.addEventListener("pointermove", (e) => {
+    if (!dragStart) return; const p = pos(e);
+    dragBox = { code: "", name: "", part: "", cost: "", x: Math.min(dragStart.x, p.x), y: Math.min(dragStart.y, p.y), w: Math.abs(p.x - dragStart.x), h: Math.abs(p.y - dragStart.y) };
+    renderMark();
+  });
+  cv.addEventListener("pointerup", () => {
+    let added = null;
+    if (dragBox && dragBox.w > 0.01 && dragBox.h > 0.01) {
+      dragBox.name = `Tool ${state.slots.length + 1}`; dragBox.code = `S${state.slots.length + 1}`;
+      state.slots.push(dragBox); added = dragBox;
+      if ($("autoNum").checked) autoNumber();
+      saveLayout();
+    }
+    dragStart = null; dragBox = null; renderMark();
+    if (added) { const i = state.slots.indexOf(added); const inp = $("slots").querySelectorAll("input[data-f=name]")[i]; if (inp) { inp.focus({ preventScroll: true }); inp.select(); } }
+  });
+}
+// Rows top to bottom (A, B, C…), slots left to right (1, 2, 3…).
+function autoNumber() {
+  const s = state.slots; if (!s.length) return;
+  const hs = s.map((b) => b.h).sort((a, b) => a - b), tol = hs[hs.length >> 1] * 0.6;
+  const byY = [...s].sort((a, b) => (a.y + a.h / 2) - (b.y + b.h / 2));
+  const rows = []; let cur = [], top = null;
+  for (const b of byY) { const cy = b.y + b.h / 2; if (top !== null && cy - top > tol) { rows.push(cur); cur = []; top = null; } if (top === null) top = cy; cur.push(b); }
+  if (cur.length) rows.push(cur);
+  const ordered = [];
+  if ($("fromBottom").checked) rows.reverse();
+  rows.forEach((r, ri) => { r.sort((a, b) => a.x - b.x).forEach((b, ci) => { b.code = rowLetter(ri) + (ci + 1); ordered.push(b); }); });
+  state.slots = ordered;
+}
+const rowLetter = (i) => (i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26)));
+
+function renderSlotList() {
+  const list = $("slots"); list.innerHTML = "";
+  if (!state.slots.length) return;
+  const head = document.createElement("div"); head.className = "slot head";
+  head.innerHTML = `<span>Code</span><span>Item name</span><span class="opt">Part no.</span><span class="opt">Unit cost</span><span></span>`;
+  list.appendChild(head);
+  state.slots.forEach((b, i) => {
+    const row = document.createElement("div"); row.className = "slot";
+    const mk = (f, cls, ph) => { const inp = document.createElement("input"); inp.type = "text"; inp.value = b[f] || ""; inp.dataset.f = f;
+      if (cls) inp.className = cls; if (ph) inp.placeholder = ph;
+      inp.addEventListener("change", () => { b[f] = inp.value.trim(); if (f === "name" && !b.name) b.name = `Tool ${i + 1}`; if (f === "code") $("autoNum").checked = false; saveLayout(); renderMark(); });
+      return inp; };
+    const del = document.createElement("button"); del.textContent = "Remove";
+    del.addEventListener("click", () => { state.slots.splice(i, 1); if ($("autoNum").checked) autoNumber(); saveLayout(); renderMark(); });
+    const part = mk("part", "opt", "optional"), cost = mk("cost", "opt", "0.00");
+    row.append(mk("code", "code"), mk("name"), part, cost, del); list.appendChild(row);
+  });
+}
+$("renumBtn").addEventListener("click", () => { autoNumber(); $("autoNum").checked = true; saveLayout(); renderMark(); });
+$("undoBtn").addEventListener("click", () => { state.slots.pop(); saveLayout(); renderMark(); });
+$("clearBtn").addEventListener("click", () => { if (state.slots.length && !confirm("Remove all slots?")) return; state.slots = []; saveLayout(); renderMark(); });
+$("boardName").addEventListener("change", saveLayout);
+$("autoNum").addEventListener("change", saveLayout);
+$("fromBottom").addEventListener("change", () => { if ($("autoNum").checked) autoNumber(); saveLayout(); renderMark(); });
+$("catalog").addEventListener("change", () => { state.textCache = null; saveLayout(); });
+
+/* ---------- persistence and export ---------- */
+function layoutObj() {
+  return { app: "tool-auditor", version: 2, board: $("boardName").value.trim(), aspect: state.aspect,
+           autoNumber: $("autoNum").checked, fromBottom: $("fromBottom").checked, method: state.method || null, catalog: $("catalog").value,
+           slots: state.slots.map(({ code, name, part, cost, x, y, w, h }) => ({ code, name, part: part || "", cost: cost || "", x, y, w, h })) };
+}
+function saveLayout() { store(KEYS.layout, layoutObj()); }
+function persistRef(key) {
+  if (key !== "ref" && key !== "empty") return;
+  const c = state.img[key]; if (!c) return;
+  if (!store(KEYS[key], c.toDataURL("image/jpeg", 0.85))) console.warn("Browser storage is full; the reference photo won't be remembered after reload.");
+}
+function applyLayout(d) {
+  $("boardName").value = d.board || "My shadow board";
+  // a catalog nobody edited moves up to the newer default list (adds pencil, spanner, screws…)
+  if (typeof d.catalog === "string" && d.catalog.trim()) $("catalog").value = d.catalog.trim() === OLD_DEFAULT_CATALOG ? DEFAULT_CATALOG : d.catalog;
+  if (typeof d.autoNumber === "boolean") $("autoNum").checked = d.autoNumber;
+  if (typeof d.fromBottom === "boolean") $("fromBottom").checked = d.fromBottom;
+  if (["markers", "paper", "manual"].includes(d.method)) state.method = d.method;
+  state.slots = (d.slots || []).map((b, i) => ({ code: String(b.code || `S${i + 1}`), name: String(b.name || `Tool ${i + 1}`),
+    part: String(b.part || ""), cost: String(b.cost || ""), x: +b.x, y: +b.y, w: +b.w, h: +b.h })).filter((b) => b.w > 0 && b.h > 0);
+  state.textCache = null;
+}
+async function restoreImage(key, dataUrl) {
+  try { const c = await viaImgTag(await (await fetch(dataUrl)).blob()); setSource(key, c, { quad: fullQuad(c), restored: true }); } catch (e) { console.warn(e); }
+}
+async function restoreAll() {
+  $("catalog").value = DEFAULT_CATALOG;
+  const d = fetchStore(KEYS.layout); if (d) applyLayout(d);
+  const ref = fetchStore(KEYS.ref, false), empty = fetchStore(KEYS.empty, false);
+  if (ref) await restoreImage("ref", ref);
+  if (empty) await restoreImage("empty", empty);
+  for (const k of ["ref", "empty"]) if (state.src[k]) setStatus(k, "✓ Restored from your last session", "ok");
+  renderMark(); renderLog();
+}
+
+$("exportJsonBtn").addEventListener("click", () => {
+  const o = layoutObj();
+  if ($("withPhotos").checked) o.photos = {
+    ref: state.img.ref ? state.img.ref.toDataURL("image/jpeg", 0.85) : null,
+    empty: state.img.empty ? state.img.empty.toDataURL("image/jpeg", 0.85) : null };
+  download(`${slug(o.board)}-planogram.json`, JSON.stringify(o, null, 2), "application/json");
+});
+$("exportCsvBtn").addEventListener("click", () => {
+  const rows = [["Board", "Slot code", "Item name", "Part no.", "Unit cost", "Qty", "x", "y", "w", "h"]];
+  state.slots.forEach((b) => rows.push([$("boardName").value, b.code, b.name, b.part, b.cost, 1, ...[b.x, b.y, b.w, b.h].map((v) => v.toFixed(4))]));
+  download(`${slug($("boardName").value)}-planogram.csv`, toCsv(rows), "text/csv");
+});
+$("layoutFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!Array.isArray(d.slots) && Array.isArray(d.boxes)) d.slots = d.boxes;    // v1 layout files
+    if (!Array.isArray(d.slots)) throw new Error("no slots");
+    applyLayout(d);
+    if (d.photos?.ref) await restoreImage("ref", d.photos.ref);
+    if (d.photos?.empty) await restoreImage("empty", d.photos.empty);
+    saveLayout(); renderMark();
+  } catch { alert("That file is not a Tool Auditor planogram."); }
+  e.target.value = "";
+});
+
+/* ---------- inputs: file, drop, paste, camera, video ---------- */
+async function handleFile(file, key) {
+  try { await decodeAny(file, key); } catch (err) { console.error(err); setStatus(key, err.message, "warn"); alert(err.message); }
+}
+document.querySelectorAll("input[type=file][data-target]").forEach((inp) => {
+  inp.addEventListener("change", async () => { const f = inp.files[0]; if (f) await handleFile(f, inp.dataset.target); inp.value = ""; });
+});
+document.querySelectorAll("[data-drop]").forEach((d) => {
+  const key = d.dataset.drop === "mark" ? "ref" : d.dataset.drop;
+  d.addEventListener("dragover", (e) => { e.preventDefault(); d.classList.add("over"); });
+  d.addEventListener("dragleave", () => d.classList.remove("over"));
+  d.addEventListener("drop", async (e) => { e.preventDefault(); d.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) await handleFile(f, key); });
+});
+document.querySelectorAll("[data-card]").forEach((c) => c.addEventListener("pointerdown", () => { state.active = c.dataset.card; }, true));
+document.addEventListener("paste", async (e) => {
+  if (e.target.closest && e.target.closest("input, textarea")) return;
+  const item = [...(e.clipboardData?.items || [])].find((i) => i.kind === "file");
+  if (!item) return; e.preventDefault(); await handleFile(item.getAsFile(), state.active || "check");
+});
+
+let camTarget = null, camStream = null, camUrl = null;
+function closeCam() {
+  camStream?.getTracks().forEach((t) => t.stop()); camStream = null;
+  const v = $("camVideo"); v.pause(); v.removeAttribute("src"); v.srcObject = null; v.controls = false;
+  if (camUrl) { URL.revokeObjectURL(camUrl); camUrl = null; }
+  if ($("camDialog").open) $("camDialog").close();
+}
+document.querySelectorAll("[data-cam]").forEach((b) => b.addEventListener("click", async () => {
+  camTarget = b.dataset.cam;
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 3840 }, height: { ideal: 2160 } } });
+    $("camHint").textContent = "Hold the camera flat above the board with the whole sheet in view.";
+    const v = $("camVideo"); v.controls = false; v.muted = true; v.srcObject = camStream; $("camDialog").showModal();
+  } catch (err) { alert("Camera unavailable: " + err.message + ". You can still choose a photo or video file."); }
+}));
+function openVideo(file, key) {
+  return new Promise((resolve, reject) => {
+    camTarget = key; camUrl = URL.createObjectURL(file);
+    const v = $("camVideo"); v.srcObject = null; v.muted = true; v.controls = true; v.src = camUrl;
+    v.onloadeddata = () => { v.currentTime = Math.min(v.duration / 2 || 0, 1); };
+    v.onerror = () => { closeCam(); reject(new Error("This browser can't play that video. Try a photo instead, or Safari for iPhone HEVC video.")); };
+    $("camHint").textContent = "Scrub to a sharp, still frame where the whole sheet is visible, then press Use this frame.";
+    $("camDialog").showModal(); resolve();
+  });
+}
+$("camCancel").addEventListener("click", closeCam);
+$("camDialog").addEventListener("cancel", closeCam);
+$("camShoot").addEventListener("click", () => {
+  const v = $("camVideo"); if (!v.videoWidth) return;
+  const c = fitCanvas(v, v.videoWidth, v.videoHeight); const key = camTarget; closeCam(); setSource(key, c);
+});
+
+/* ---------- crops and stray scan ---------- */
+function cropCanvas(src, b, pad = CROP_PAD) {
+  const px = b.w * pad, py = b.h * pad;
+  const x0 = Math.max(0, b.x - px), y0 = Math.max(0, b.y - py), x1 = Math.min(1, b.x + b.w + px), y1 = Math.min(1, b.y + b.h + py);
+  const sx = x0 * src.width, sy = y0 * src.height, sw = (x1 - x0) * src.width, sh = (y1 - y0) * src.height;
+  const k = CROP_SIDE / Math.max(sw, sh), c = newCanvas(sw * k, sh * k), g = c.getContext("2d");
+  g.imageSmoothingQuality = "high"; g.drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height); return c;
+}
+function greyGrid(c, gw, gh) {
+  const mid = newCanvas(gw * 4, gh * 4), m = mid.getContext("2d"); m.imageSmoothingQuality = "high"; m.drawImage(c, 0, 0, mid.width, mid.height);
+  const t = newCanvas(gw, gh), g = t.getContext("2d", { willReadFrequently: true }); g.imageSmoothingQuality = "high"; g.drawImage(mid, 0, 0, gw, gh);
+  return greyOf(t);
+}
+function median(a) { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1] || 1; }
+
+// RGB grid of a whole board image, gw × gh cells (two-step downscale so each cell is an average).
+function rgbGridWH(c, gw, gh) {
+  const mid = newCanvas(gw * 4, gh * 4), m = mid.getContext("2d"); m.imageSmoothingQuality = "high"; m.drawImage(c, 0, 0, mid.width, mid.height);
+  const t = newCanvas(gw, gh), g = t.getContext("2d", { willReadFrequently: true }); g.imageSmoothingQuality = "high"; g.drawImage(mid, 0, 0, gw, gh);
+  return g.getImageData(0, 0, gw, gh).data;
+}
+// Finds places where the board changed between the reference and the check photo, away from the tools' own outlines.
+// With an empty-board photo the tools' coloured outlines are masked (so a pencil lying inside a slot box still counts);
+// without one, whole slot boxes are masked. Compares colour, not just brightness, so a yellow pencil on white shows up.
+function findStrays(chk, ref, emp) {
+  const a = state.aspect || 1, L = 160, gw = a >= 1 ? L : Math.round(L * a), gh = a >= 1 ? Math.round(L / a) : L, N = gw * gh;
+  const A = rgbGridWH(chk, gw, gh), B = rgbGridWH(ref, gw, gh);
+  const mask = new Uint8Array(N), bx = Math.ceil(gw * 0.05), by = Math.ceil(gh * 0.05);
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) if (x < bx || y < by || x >= gw - bx || y >= gh - by) mask[y * gw + x] = 1;
+  let usedOutlines = false; const near = new Uint8Array(N);
+  if (emp) {
+    const E = rgbGridWH(emp, gw, gh), ink = new Uint8Array(N); let count = 0;
+    const ke = [0, 1, 2].map((ch) => { const fa = [], fb = []; for (let i = 0; i < N; i++) { fa.push(E[4 * i + ch]); fb.push(B[4 * i + ch]); } return median(fb) / median(fa); });
+    for (let i = 0; i < N; i++) {
+      const r = E[4 * i], g = E[4 * i + 1], b = E[4 * i + 2], hi = Math.max(r, g, b), lo = Math.min(r, g, b);
+      let d = 0; for (let ch = 0; ch < 3; ch++) d = Math.max(d, Math.abs(E[4 * i + ch] * ke[ch] - B[4 * i + ch]));
+      // tool footprint: the coloured fill, the black outline, or anywhere a tool lies in the reference (e.g. a blade past its outline)
+      if (hi - lo > 45 || hi < 90 || d > 40) { ink[i] = 1; count++; }
+    }
+    if (count > N * 0.02) {
+      usedOutlines = true;
+      const W2 = STRAY_NEAR;                                          // wider band: a tool lying a bit off its outline
+      for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+        if (!ink[y * gw + x]) continue;
+        for (let dy = -W2; dy <= W2; dy++) for (let dx = -W2; dx <= W2; dx++) {
+          const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < gw && ny < gh) near[ny * gw + nx] = 1;
+        }
+      }
+      const R = STRAY_MARGIN;                                         // tools sit a little off their outline: allow a margin
+      for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+        if (!ink[y * gw + x]) continue;
+        for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+          const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < gw && ny < gh) mask[ny * gw + nx] = 1;
+        }
+      }
+    }
+  }
+  if (!usedOutlines) for (const s of state.slots) {
+    const x0 = Math.floor((s.x - 0.025) * gw), x1 = Math.ceil((s.x + s.w + 0.025) * gw), y0 = Math.floor((s.y - 0.025) * gh), y1 = Math.ceil((s.y + s.h + 0.025) * gh);
+    for (let y = Math.max(0, y0); y < Math.min(gh, y1); y++) for (let x = Math.max(0, x0); x < Math.min(gw, x1); x++) mask[y * gw + x] = 1;
+  }
+  // even out exposure between the two photos, per colour channel, using the unmasked paper
+  const k = [0, 1, 2].map((ch) => {
+    const fa = [], fb = []; for (let i = 0; i < N; i++) if (!mask[i]) { fa.push(A[4 * i + ch]); fb.push(B[4 * i + ch]); }
+    return fa.length < 20 ? 1 : median(fb) / median(fa);
+  });
+  const flag = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    if (mask[i]) continue;
+    let d = 0; for (let ch = 0; ch < 3; ch++) d = Math.max(d, Math.abs(A[4 * i + ch] * k[ch] - B[4 * i + ch]));
+    if (d > STRAY_DIFF) flag[i] = 1;
+  }
+  const seen = new Uint8Array(N), out = [], minCells = Math.max(8, Math.round(N * 0.0005));
+  for (let p = 0; p < N; p++) {
+    if (!flag[p] || seen[p]) continue;
+    const st = [p]; seen[p] = 1; let n = 0, nNear = 0, x0 = gw, x1 = 0, y0 = gh, y1 = 0;
+    while (st.length) {
+      const q = st.pop(), x = q % gw, y = (q / gw) | 0; n++; if (near[q]) nNear++;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
+        const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+        const r = ny * gw + nx; if (flag[r] && !seen[r]) { seen[r] = 1; st.push(r); }
+      }
+    }
+    if (n < minCells) continue;
+    if (usedOutlines && nNear > 0.6 * n) continue;                     // hugging an outline: a tool lying a little off, not a stray
+    const x = Math.max(0, (x0 - 1) / gw), y = Math.max(0, (y0 - 1) / gh);
+    out.push({ n, x, y, w: Math.min(1 - x, (x1 - x0 + 3) / gw), h: Math.min(1 - y, (y1 - y0 + 3) / gh) });
+  }
+  return out.sort((p, q) => q.n - p.n).slice(0, MAX_STRAYS);
+}
+// How much a slot's picture changed since the reference (0 = identical; colour-aware, exposure-evened).
+function slotChange(refC, chkC) {
+  const a = rgbGrid(refC), b = rgbGrid(chkC), k = [0, 1, 2].map((ch) => {
+    const fa = [], fb = []; for (let i = ch; i < a.length; i += 4) { fa.push(a[i]); fb.push(b[i]); } return median(fa) / median(fb); });
+  let s = 0; for (let i = 0; i < a.length; i += 4) { let d = 0; for (let ch = 0; ch < 3; ch++) d = Math.max(d, Math.abs(b[i + ch] * k[ch] - a[i + ch])); s += d; }
+  return s / (a.length / 4) / 255;
+}
+function nearestSlot(b) {
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2; let best = null, bd = Infinity;
+  for (const s of state.slots) { const d = Math.hypot(s.x + s.w / 2 - cx, (s.y + s.h / 2 - cy) / (state.aspect || 1)); if (d < bd) { bd = d; best = s; } }
+  return best;
+}
+
+/* ---------- the check ---------- */
+$("thr").addEventListener("input", () => { $("thrVal").textContent = Number($("thr").value).toFixed(2); });
+
+// How much of a slot's coloured fill shows, compared with the empty board (0 = covered as in the reference, 1 = fully showing).
+function rgbGrid(c, n = 48) {
+  const t = newCanvas(n, n), g = t.getContext("2d", { willReadFrequently: true }); g.imageSmoothingQuality = "high";
+  g.drawImage(c, 0, 0, n, n); return g.getImageData(0, 0, n, n).data;
+}
+function outlineShowing(refC, chkC, empC) {
+  const e = rgbGrid(empC), r = rgbGrid(refC), c = rgbGrid(chkC);
+  let fill = 0, inRef = 0, inChk = 0;
+  const near = (a, i) => Math.hypot(a[i] - e[i], a[i + 1] - e[i + 1], a[i + 2] - e[i + 2]) < 60;
+  for (let i = 0; i < e.length; i += 4) {
+    const hi = Math.max(e[i], e[i + 1], e[i + 2]), lo = Math.min(e[i], e[i + 1], e[i + 2]);
+    if (hi - lo < 45) continue;                       // only the coloured fill counts, not white paper or pencil
+    fill++; if (near(r, i)) inRef++; if (near(c, i)) inChk++;
+  }
+  if (fill < 40) return null;                          // no coloured outline in this slot
+  const a = inRef / fill, b = inChk / fill;
+  return Math.max(0, (b - a) / Math.max(0.05, 1 - a));
+}
+async function textLabels() {
+  const names = [...new Set([...state.slots.map((s) => s.name), ...$("catalog").value.split("\n")].map((s) => s.trim()).filter(Boolean))];
+  const key = names.join("\u0001");
+  if (state.textCache?.key !== key) state.textCache = { key, names, embs: await embedTexts(names.map(asQuery)) };
+  return state.textCache;
+}
+function bestLabel(v, labels) {
+  let bi = 0, bs = -2; labels.embs.forEach((e, i) => { const s = dot(v, e); if (s > bs) { bs = s; bi = i; } });
+  return { name: labels.names[bi], score: bs };
+}
+
+async function runCheck() {
+  if (!state.model) return alert("Load the model first (step 0).");
+  if (!state.img.ref) return alert("Add the 'all tools in place' photo (step 1).");
+  if (!state.slots.length) return alert("Mark at least one slot (step 2).");
+  if (!state.img.check) return alert("Add the photo to check (step 3).");
+  if (state.view.check === "adjust") { state.view.check = "warped"; warpKey("check"); }
+  const btn = $("runBtn"); btn.disabled = true; btn.textContent = "Checking…";
+  try {
+    const n = state.slots.length, hasEmpty = !!state.img.empty;
+    const refC = state.slots.map((b) => cropCanvas(state.img.ref, b));
+    const chkC = state.slots.map((b) => cropCanvas(state.img.check, b));
+    const empC = hasEmpty ? state.slots.map((b) => cropCanvas(state.img.empty, b)) : [];
+    const strays = $("strayOn").checked ? findStrays(state.img.check, state.img.ref, state.img.empty) : [];
+    const strC = strays.map((b) => cropCanvas(state.img.check, b, 0.1));
+    $("runInfo").textContent = `Embedding ${refC.length + chkC.length + empC.length + strC.length} crops on ${state.device}…`;
+    const t0 = performance.now();
+    const embs = await embedImages([...refC, ...chkC, ...empC, ...strC]);
+    const labels = await textLabels();
+    const ms = performance.now() - t0;
+    const R = embs.slice(0, n), C = embs.slice(n, 2 * n), E = hasEmpty ? embs.slice(2 * n, 3 * n) : null, S = embs.slice(hasEmpty ? 3 * n : 2 * n);
+    const thr = Number($("thr").value);
+
+    state.results = state.slots.map((b, i) => {
+      const self = dot(C[i], R[i]);
+      let other = -1, otherJ = -1;
+      for (let j = 0; j < n; j++) if (j !== i) { const s = dot(C[i], R[j]); if (s > other) { other = s; otherJ = j; } }
+      const empty = E ? dot(C[i], E[i]) : null;
+      const looks = bestLabel(C[i], labels);
+      let verdict, low = false, fitNote = false;
+      const showing = hasEmpty ? outlineShowing(refC[i], chkC[i], empC[i]) : null;
+      const change = slotChange(refC[i], chkC[i]);
+      const bestIsEmpty = E && empty >= self && empty >= other;
+      const wrong = otherJ >= 0 && other >= thr && other > self + WRONG_MARGIN;
+      const somethingThere = showing != null && showing < EMPTY_SHOWING;   // outline mostly covered: a tool is in the slot
+      if (bestIsEmpty && !somethingThere) verdict = "missing";
+      else if (wrong) verdict = "wrong";
+      else if (self >= thr || (bestIsEmpty && somethingThere)) verdict = "present";   // the outline check below decides if it fits
+      else if (!E) verdict = "missing";              // without an empty-board photo we can't tell missing from unknown
+      else if (looks.name.toLowerCase() === b.name.toLowerCase()) { verdict = "present"; low = true; }
+      else verdict = "unknown";
+      // The coloured outline is a second witness: a tool that leaves its outline showing is the wrong size, or gone.
+      if (showing != null && verdict === "present") {
+        if (showing > EMPTY_SHOWING + 0.1) verdict = "missing";
+        else if (showing > FIT_LIMIT && otherJ >= 0) { verdict = "wrong"; fitNote = true; }
+      }
+      return { code: b.code, name: b.name, part: b.part, cost: b.cost, self, other, empty, low, verdict, showing, change, fitNote, otherJ,
+               otherName: otherJ >= 0 ? state.slots[otherJ].name : "—", otherCode: otherJ >= 0 ? state.slots[otherJ].code : "",
+               looks: verdict === "present" && !low ? null : looks };
+    });
+    // A slot counts as touched when its picture changed clearly more than the photo's general noise (light, glare).
+    const changeLimit = Math.max(CHANGE_MIN, 1.8 * median(state.results.map((r) => r.change)));
+    state.results.forEach((r) => { r.touched = r.change > changeLimit; });
+    // A tool that leaves its outline showing came from somewhere: only a tool missing from its own slot, or whose
+    // slot was touched, can be it. If none fits, it's a different item (e.g. a smaller spanner from the drawer).
+    state.results.forEach((r, i) => {
+      if (!r.fitNote) return;
+      const cand = state.results.map((y, k) => k).filter((k) => k !== i && (state.results[k].verdict !== "present" || state.results[k].touched));
+      if (!cand.length) { Object.assign(r, { verdict: "unknown", wrongSize: true }); return; }
+      const k = cand.reduce((a, b) => (dot(C[i], R[b]) > dot(C[i], R[a]) ? b : a));
+      Object.assign(r, { otherJ: k, other: dot(C[i], R[k]), otherName: state.slots[k].name, otherCode: state.slots[k].code });
+    });
+    // One tool per slot: if slot X holds slot Y's tool, then slot Y can't be holding its own tool.
+    state.results.forEach((r) => {
+      if (r.verdict !== "wrong" || r.otherJ < 0) return;
+      const x = state.results.indexOf(r), y = state.results[r.otherJ];
+      if (y.verdict !== "present") return;
+      // Only call a swap when Y's tool looks most like X's tool too, and its match at home isn't clearly better.
+      if (!y.touched || y.otherJ !== x || y.self - y.other > SWAP_GAP) return;
+      const j = r.otherJ; let best = -2, bk = -1;
+      for (let k = 0; k < n; k++) if (k !== j) { const v = dot(C[j], R[k]); if (v > best) { best = v; bk = k; } }
+      Object.assign(y, { verdict: "wrong", inferred: true, otherJ: bk, other: best, otherName: state.slots[bk].name, otherCode: state.slots[bk].code });
+    });
+    state.strays = strays.map((b, i) => ({ ...b, looks: bestLabel(S[i], labels), near: nearestSlot(b)?.code || "" }));
+    renderResults(ms);
+    logRun();
+  } catch (err) {
+    console.error(err); alert("Check failed: " + err.message);
+  } finally { btn.disabled = false; btn.textContent = "Run check"; }
+}
+$("runBtn").addEventListener("click", runCheck);
+
+function clearResults() {
+  $("resultsEmpty").style.display = "";
+  state.results = null; state.strays = [];
+  $("summary").className = "summary"; $("tiles").style.display = "none"; $("actions").innerHTML = "";
+  $("resultTable").style.display = "none"; $("runInfo").textContent = ""; $("dlImgBtn").disabled = true;
+}
+function slotLabel(r) {
+  if (r.verdict === "present") return { color: COLORS.present, label: `✓ ${r.code}${r.low ? "?" : ""}` };
+  if (r.verdict === "missing") return { color: COLORS.missing, label: `MISSING ${r.code} ${r.name}` };
+  if (r.verdict === "wrong") return { color: COLORS.wrong, label: `${r.code}: ${r.otherName} (belongs in ${r.otherCode})` };
+  if (r.wrongSize) return { color: COLORS.unknown, label: `${r.code}: wrong item, doesn't fit` };
+  return { color: COLORS.unknown, label: `${r.code}: unknown, ${r.looks.name}?` };
+}
+function renderCheckImage() {
+  const res = state.results; if (!res || !state.img.check) return;
+  const boxes = [...state.slots, ...state.strays];
+  drawOnto("check", state.img.check, boxes, (b, i) => i < res.length ? slotLabel(res[i])
+    : { color: COLORS.stray, dash: true, label: `STRAY near ${state.strays[i - res.length].near}: ${state.strays[i - res.length].looks.name}?` });
+}
+// Compliance: every slot holding its own tool scores; every slot problem and every stray object counts against it.
+// e.g. 9 tools present + 1 stray pencil = 9 / (9 + 1) = 90%.
+const compliance = (present, slots, strays) => Math.round(100 * present / (slots + strays));
+function counts() {
+  const r = state.results, c = { present: 0, missing: 0, wrong: 0, unknown: 0 };
+  r.forEach((x) => c[x.verdict]++); return c;
+}
+function renderResults(ms) {
+  const res = state.results, c = counts(), total = res.length, score = compliance(c.present, total, state.strays.length);
+  renderCheckImage();
+  const tile = (k, v, cls, extra = "") => `<div class="tile ${cls} ${extra}"><div class="v">${v}</div><div class="k">${k}</div></div>`;
+  $("tiles").innerHTML = tile(state.strays.length ? `Compliance · ${state.strays.length} stray counted` : "Compliance", score + "%", score === 100 ? "ok" : score >= 80 ? "warn" : "bad", "score") +
+    tile("Present", `${c.present}/${total}`, "ok") + tile("Missing", c.missing, c.missing ? "bad" : "") +
+    tile("Misplaced", c.wrong, c.wrong ? "warn" : "") + tile("Unknown in slot", c.unknown, c.unknown ? "odd" : "") +
+    tile("Stray objects", state.strays.length, state.strays.length ? "odd" : "");
+  $("tiles").style.display = "grid";
+  $("resultsEmpty").style.display = "none";
+
+  const acts = [];
+  res.forEach((r) => {
+    const foundIn = res.filter((x) => x.verdict === "wrong" && x.otherCode === r.code).map((x) => x.code);
+    if (r.verdict === "missing") acts.push(foundIn.length ? `<b>${esc(r.code)}</b> · ${esc(r.name)} is not in its slot; it looks like it's in ${esc(foundIn.join(", "))}`
+      : `<b>${esc(r.code)}</b> · ${esc(r.name)} is missing → find it, or reorder (restock line added)`);
+    if (r.verdict === "wrong") acts.push(`<b>${esc(r.code)}</b> holds the ${esc(r.otherName)} → move it back to ${esc(r.otherCode)}`);
+    if (r.verdict === "unknown" && r.wrongSize) acts.push(`<b>${esc(r.code)}</b> holds a tool that doesn't fit its outline, not the ${esc(r.name)} → swap in the right one`);
+    else if (r.verdict === "unknown") acts.push(`<b>${esc(r.code)}</b> holds something that isn't the ${esc(r.name)} (looks like: ${esc(r.looks.name)}) → remove it`);
+  });
+  state.strays.forEach((s) => acts.push(`<b>Stray object</b> near ${esc(s.near)} (looks like: ${esc(s.looks.name)}) → remove it from the board`));
+  $("actions").innerHTML = acts.map((a) => `<li>${a}</li>`).join("");
+
+  const s = $("summary");
+  if (!acts.length) { s.className = "summary ok"; s.textContent = `All ${total} tools present and nothing stray on the board.`; }
+  else { s.className = "summary bad"; s.textContent = `${acts.length} action${acts.length > 1 ? "s" : ""} needed:`; }
+
+  const tb = $("resultTable").querySelector("tbody"); tb.innerHTML = "";
+  res.forEach((r) => {
+    const label = { present: r.low ? "Present (low confidence)" : "Present", missing: "Missing", wrong: `Misplaced: ${r.otherName}${r.fitNote ? " (outline showing)" : r.inferred ? " (swap)" : ""}`, unknown: r.wrongSize ? "Wrong item (doesn't fit outline)" : "Unknown item" }[r.verdict];
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num">${esc(r.code)}</td><td>${esc(r.name)}</td><td><span class="tag ${r.verdict}">${esc(label)}</span></td>
+      <td class="num">${f3(r.self)}</td><td class="num">${f3(r.other)} <span style="color:var(--muted)">${esc(r.otherCode)}</span></td>
+      <td class="num">${f3(r.empty)}</td><td class="num">${r.showing == null ? "—" : Math.round(r.showing * 100) + "%"}</td><td class="num">${f3(r.change)}</td><td>${r.looks ? `${esc(r.looks.name)} <span class="num" style="color:var(--muted)">${f3(r.looks.score)}</span>` : "—"}</td>`;
+    tb.appendChild(tr);
+  });
+  state.strays.forEach((st) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num">near ${esc(st.near)}</td><td>—</td><td><span class="tag stray">Stray object</span></td><td></td><td></td><td></td><td></td><td></td>
+      <td>${esc(st.looks.name)} <span class="num" style="color:var(--muted)">${f3(st.looks.score)}</span></td>`;
+    tb.appendChild(tr);
+  });
+  $("resultTable").style.display = "table"; $("dlImgBtn").disabled = false;
+  $("runInfo").textContent = `Checked ${total} slots${state.strays.length ? ` and ${state.strays.length} stray area(s)` : ""} in ${(ms / 1000).toFixed(1)} s on ${state.device}. ` +
+    (state.img.empty ? "Using the empty-board photo." : "No empty-board photo: 'unknown item' can't be detected, and anything unmatched counts as missing.") +
+    " 'Looks like' is the model's best guess from the item-name list.";
+  renderRestock();
+}
+
+/* ---------- restock request ---------- */
+function restockLines() {
+  if (!state.results) return [];
+  const seenElsewhere = new Set(state.results.filter((r) => r.verdict === "wrong").map((r) => r.otherCode));
+  return state.results.filter((r) => r.verdict === "missing" && !seenElsewhere.has(r.code)).map((r) => {
+    const cost = parseFloat(String(r.cost).replace(/[^0-9.]/g, ""));
+    return { code: r.code, name: r.name, part: r.part || "", qty: 1, cost: isFinite(cost) ? cost : null, value: isFinite(cost) ? cost : null,
+             reason: "Missing at tool audit" };
+  });
+}
+function renderRestock() {
+  const lines = restockLines(), tb = $("restockTable").querySelector("tbody"); tb.innerHTML = "";
+  lines.forEach((l) => { const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num">${esc(l.code)}</td><td>${esc(l.name)}</td><td>${esc(l.part || "—")}</td><td class="num">1</td>
+      <td class="num">${l.cost == null ? "—" : l.cost.toFixed(2)}</td><td class="num">${l.value == null ? "—" : l.value.toFixed(2)}</td><td>${esc(l.reason)}</td>`;
+    tb.appendChild(tr); });
+  $("restockTable").style.display = lines.length ? "table" : "none";
+  $("restockEmpty").textContent = state.results ? (lines.length ? "" : "Nothing to restock: no tools missing.") : "No restock lines yet.";
+  $("restockCsvBtn").disabled = !lines.length; $("restockCopyBtn").disabled = !lines.length;
+}
+$("restockCsvBtn").addEventListener("click", () => {
+  const d = new Date().toISOString().slice(0, 10), b = $("boardName").value;
+  const rows = [["Date", "Board", "Slot", "Item", "Part no.", "Qty", "Unit cost", "Line value", "Reason"]];
+  restockLines().forEach((l) => rows.push([d, b, l.code, l.name, l.part, l.qty, l.cost ?? "", l.value ?? "", l.reason]));
+  download(`${slug(b)}-restock-${stamp()}.csv`, toCsv(rows), "text/csv");
+});
+$("restockCopyBtn").addEventListener("click", async () => {
+  const lines = restockLines(), total = lines.reduce((s, l) => s + (l.value || 0), 0);
+  const txt = `Restock request: ${$("boardName").value} (${new Date().toLocaleDateString()})\n` +
+    lines.map((l) => `- ${l.code} · ${l.name}${l.part ? ` (part ${l.part})` : ""} × 1${l.cost != null ? ` @ ${l.cost.toFixed(2)}` : ""}`).join("\n") +
+    (total ? `\nEstimated total: ${total.toFixed(2)}` : "");
+  try { await navigator.clipboard.writeText(txt); $("restockCopyBtn").textContent = "Copied ✓"; } catch { prompt("Copy this:", txt); }
+  setTimeout(() => ($("restockCopyBtn").textContent = "Copy as text"), 1500);
+});
+$("dlImgBtn").addEventListener("click", () => {
+  const cv = document.querySelector('[data-drop="check"] canvas'); if (!cv) return;
+  cv.toBlob((b) => download(`${slug($("boardName").value)}-check-${stamp()}.jpg`, b), "image/jpeg", 0.9);
+});
+
+/* ---------- audit log ---------- */
+function readLog() { const v = fetchStore(KEYS.log); return Array.isArray(v) ? v : []; }
+function logRun() {
+  const c = counts(), total = state.results.length;
+  const entry = { ts: new Date().toISOString(), board: $("boardName").value, score: compliance(c.present, total, state.strays.length), present: c.present, total,
+    slots: state.results.map((r) => ({ code: r.code, name: r.name, verdict: r.verdict + (r.low ? " (low confidence)" : ""),
+      detected: r.verdict === "wrong" ? r.otherName : r.looks ? r.looks.name : r.name, self: +r.self.toFixed(3), empty: r.empty == null ? null : +r.empty.toFixed(3) })),
+    strays: state.strays.map((s) => ({ near: s.near, looks: s.looks.name })) };
+  const log = readLog(); log.push(entry);
+  while (log.length > 500) log.shift();
+  store(KEYS.log, log); renderLog();
+}
+function renderLog() {
+  const log = readLog(), tb = $("logTable").querySelector("tbody"); tb.innerHTML = "";
+  log.slice(-10).reverse().forEach((e) => {
+    const issues = e.slots.filter((s) => !s.verdict.startsWith("present")).map((s) => `${s.code} ${s.verdict}`)
+      .concat(e.strays.map((s) => `stray near ${s.near}`));
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num">${esc(new Date(e.ts).toLocaleString())}</td><td>${esc(e.board)}</td><td class="num">${e.score}%</td>
+      <td class="num">${e.present}/${e.total}</td><td>${esc(issues.join(" · ") || "none")}</td>`;
+    tb.appendChild(tr);
+  });
+  $("logTable").style.display = log.length ? "table" : "none";
+  $("logEmpty").textContent = log.length ? (log.length > 10 ? `Showing the last 10 of ${log.length} checks.` : "") : "No checks logged yet.";
+}
+$("logCsvBtn").addEventListener("click", () => {
+  const rows = [["Timestamp", "Board", "Compliance %", "Slot / area", "Item", "Verdict", "Detected", "Same-tool score", "Empty-slot score"]];
+  readLog().forEach((e) => {
+    e.slots.forEach((s) => rows.push([e.ts, e.board, e.score, s.code, s.name, s.verdict, s.detected, s.self, s.empty ?? ""]));
+    e.strays.forEach((s) => rows.push([e.ts, e.board, e.score, `near ${s.near}`, "", "stray object", s.looks, "", ""]));
+  });
+  download(`tool-auditor-log-${stamp()}.csv`, toCsv(rows), "text/csv");
+});
+$("logClearBtn").addEventListener("click", () => { if (confirm("Delete the audit log in this browser?")) { store(KEYS.log, []); renderLog(); } });
+
+restoreAll();
+</script>
+</body>
+</html>
